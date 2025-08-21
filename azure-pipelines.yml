@@ -1,0 +1,60 @@
+trigger:
+  branches:
+    include:
+      - dev
+
+pr:
+  branches:
+    include:
+      - dev
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  buildConfiguration: 'Release'
+  webAppName: 'eventia-api-dev'
+
+steps:
+- task: UseDotNet@2
+  inputs:
+    packageType: 'sdk'
+    version: '9.0.x'
+    installationPath: $(Agent.ToolsDirectory)/dotnet
+
+- task: Cache@2
+  inputs:
+    key: 'nuget | "$(Agent.OS)" | Eventia.Api/Eventia.Api.csproj'
+    restoreKeys: |
+      nuget | "$(Agent.OS)"
+    path: $(UserProfile)/.nuget/packages
+
+- script: dotnet restore Eventia.Api/Eventia.Api.csproj
+  displayName: 'Restore dependencies'
+
+- script: dotnet build Eventia.Api/Eventia.Api.csproj --configuration $(buildConfiguration)
+  displayName: 'Build project'
+
+- script: dotnet publish Eventia.Api/Eventia.Api.csproj --configuration $(buildConfiguration) -o $(Build.ArtifactStagingDirectory)
+  displayName: 'Publish project'
+
+- task: ArchiveFiles@2
+  inputs:
+    rootFolderOrFile: '$(Build.ArtifactStagingDirectory)'
+    includeRootFolder: false
+    archiveType: 'zip'
+    archiveFile: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+    replaceExistingArchive: true
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
+
+- task: AzureWebApp@1
+  inputs:
+    azureSubscription: 'Eventia-ServiceConnection'
+    appType: 'webApp'
+    appName: $(webAppName)
+    package: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
